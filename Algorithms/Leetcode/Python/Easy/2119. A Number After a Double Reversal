@@ -1,0 +1,12 @@
+class Solution:
+    def isSameAfterReversals(self, num):
+        if num == 0:
+            return True
+        reversed_num = str(num)[::-1].lstrip("0")
+        return num == int(reversed_num[::-1])
+    
+def main():
+    num = 526
+    print(Solution().isSameAfterReversals(num))
+if __name__ == "__main__":
+    main()
