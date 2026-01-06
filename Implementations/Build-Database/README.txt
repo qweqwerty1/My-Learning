@@ -187,9 +187,126 @@ int main(int argc, char* argv[]) {
  - strcmp로 buffer의 문자가 .exit 이면 프로그램을 종료 시킨다.
  - 현재는 다른 DB 명령어가 미 구현되어 있으므로 나머지 경우에는 알 수 없는 명령어 처리한다.
 
- @ 참고사항
+@ 참고사항
   * 메인함수의 구조를 통해 input_buffer의 속성을 알 수 있다.
    - buffer_length를 할당 받게 되면, 매번 반복하여 input_buffer가 buffer_length 보다 작을 때 
     기존 메모리공간을 재사용 한다.
    - buffer_length가 커지게 되면 상기 개념(재사용) 때문에 불필요한 힙 공간 점유가 생길 수 있다.
     * 단, 진행중인 프로젝트 Build-Database의 경우 REPL(대화형 쉘) 특성상 성능 이점이 더 큼
+
+
+https://imsoo.github.io/2020-01-02/LBASD-PART2
+
+제2장 - 세상에서 가장 간단한 SQL 컴파일러 및 가상 머신
+
+https://imsoo.github.io/assets/images/LBASD/arch2.gif
+
+- sqlite의 전단 부는 문자열을 구문 분석하여 내부 표현 형태인 바이트코드로 출력하는 SQL 컴파일러입니다.
+- 위 바이트 코드는 가상 머신으로 전달되고, 가상 머신은 바이트코드를 실행합니다.
+
+두 단계로 나누는 것은 두 가지 이점이 있다
+1. 각 부분의 복잡성을 낮추게 된다.(예: 가상머신은 구문 오류를 고려하지 않아도 됩니다.)
+2. 자주 쓰이는 쿼리를 컴파일하고 바이트코드를 캐싱하여 성능을 향상시킬 수 있다.
+
+[상태정의(열거형) + 데이터 컨테이너]
+/* typedef enum {
+    META_COMMAND_SUCCESS,
+    META_COMMAND_UNRECOGNIZED_COMMAND
+} MetaCommandResult;
+
+typedef enum { PREPARE_SUCCESS, PREPARE_UNRECOGNIZED_STATEMENT } PrepareResult;
+
+typedef enum { STATEMENT_INSERT, STATEMENT_SELECT } StatementType;
+
+typedef struct {
+    StatementType type;
+} Statement;
+*/
+
+ - 메타 명령(점으로 시작하는 명령)의 검사, 준비된 문장(PREPARE)의 검사, 상태(STATEMENT)의 구분
+  * 검사는 실패 or 성공이므로 0과 1로 구분, 상태는 현재 2가지 이지만 추가 될 수 있음
+ - Statement(struct)를 통해 현재 Statement(insert, select 등)와 각종 필요 데이터들 저장(2장에서는 type만 저장)
+ - enum은 첫번째 인자를 0부터 추가될 때마다 auto_incresement되는 형태이다.
+  * 해당 형식을 사용함으로서 switch문을 응용하여 버퍼내용의 검사를 수월하게 할 수 있다.
+
+[문장의 실처리]
+/* MetaCommandResult do_meta_command(InputBuffer* input_buffer) {
+    if(strcmp(input_buffer->buffer, ".exit") == 0) {
+        close_input_buffer(input_buffer);
+        exit(EXIT_SUCCESS);
+    } else {
+        return META_COMMAND_UNRECOGNIZED_COMMAND;
+    }
+}
+
+PrepareResult prepare_statement(InputBuffer* input_buffer, Statement* statement){
+    if (strncmp(input_buffer->buffer, "insert",6) == 0) {
+        statement->type = STATEMENT_INSERT;
+        return PREPARE_SUCCESS;
+    }
+    if (strcmp(input_buffer->buffer,"select") == 0){
+        statement->type = STATEMENT_SELECT;
+        return PREPARE_SUCCESS;
+    }
+
+    return PREPARE_UNRECOGNIZED_STATEMENT;
+}
+
+void execute_statement(Statement* statement){
+    switch (statement->type) {
+        case (STATEMENT_INSERT):
+            printf("This is where we would do an insert.\n");
+            break;
+        case (STATEMENT_SELECT):
+            printf("This is where we would do a select.\n");
+            break;
+    }
+}
+*/
+
+ - 메타커맨드(.)를 입력받으면 do_meta_command함수를 통해 적합한 명령어(ex: ".exit")인지 검사 후 해당 명령을 수행, 또는 상태(실패) 반환
+ - 명령어를 입력받으면 prepare_statement를 통해 적합한 명령어인지 검사 후 상태(type)와 Prepare 성공여부를 반환
+ - prepare(프론트엔드)를 통해 검사를 하고 excute를 통해 실제 결과물을 만듬(현재는 간단한 성공 문자만 출력한다.)
+
+[main]
+/*
+-    if (strcmp(input_buffer->buffer, ".exit") == 0) {
+-      close_input_buffer(input_buffer);
+-      exit(EXIT_SUCCESS);
+-    } else {
+-      printf("Unrecognized command '%s'.\n", input_buffer->buffer);
+
++    if (input_buffer->buffer[0] == '.') {
++      switch (do_meta_command(input_buffer)) {
++        case (META_COMMAND_SUCCESS):
++          continue;
++        case (META_COMMAND_UNRECOGNIZED_COMMAND):
++          printf("Unrecognized command '%s'\n", input_buffer->buffer);
++          continue;
++      }
+     }
++
++    Statement statement;
++    switch (prepare_statement(input_buffer, &statement)) {
++      case (PREPARE_SUCCESS):
++        break;
++      case (PREPARE_UNRECOGNIZED_STATEMENT):
++        printf("Unrecognized keyword at start of '%s'.\n",
++               input_buffer->buffer);
++        continue;
++    }
++
++    execute_statement(&statement);
++    printf("Executed.\n");
+*/
+
+ - 기존 .exit를 입력받으면 종료되는 것을 buffer[0] == '.'일 때 do_meta_command함수를 통해 종료되도록 변경
+ - 또한 prepare_statement를 통해 적합한 명령어(메타 커맨드가 아닐 때)인지 검사 후 성공하면 타입(StatementType) 저장 후 
+  execute_statement(실 수행 함수)를 실행한다. 
+
+  @참고사항
+   * switch는 분기문(Branch)이다. 
+    - break : switch문을 탈출하거나, 반복문을 탈출한다.(가장 가까운 녀석/스택)
+    - continue : switch문은 이 명령어를 처리할 능력이 없다. 그래서 가장 가까운 반복문에게 신호가 토스된다.
+    main함수에서 사용된 용법을 보면 위 내용이 이해가 될 것이다.
+
