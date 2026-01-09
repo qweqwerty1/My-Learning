@@ -310,3 +310,8 @@ void execute_statement(Statement* statement){
     - continue : switch문은 이 명령어를 처리할 능력이 없다. 그래서 가장 가까운 반복문에게 신호가 토스된다.
     main함수에서 사용된 용법을 보면 위 내용이 이해가 될 것이다.
 
+제3장 - 메모리 내, 추가 전용, 단일 테이블 데이터베이스
+
+https://imsoo.github.io/2020-01-03/LBASD-PART3
+
+목표 : 작은 규모의 데이터베이스 
